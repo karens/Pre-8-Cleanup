@@ -1,0 +1,3 @@
+name = Cleanup
+description = Module to clean up content before D8 migration.
+core = 7.x

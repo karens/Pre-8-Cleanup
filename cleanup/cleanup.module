@@ -1,0 +1,70 @@
+<?php
+/**
+ * Implements hook_menu().
+ */
+function cleanup_menu() {
+  $items['admin/cleanup/format'] = array(
+    'title' => 'Cleanup Formats',
+    'page callback' => 'cleanup_format_page',
+    'access arguments' => array('administer content'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+  return $items;
+}
+
+/**
+ * Page callback.
+ */
+function cleanup_format_page() {
+  drupal_set_title('Cleanup Formats');
+  $message = '<div>No cleanup needed for formats.</div>';
+  $output = '';
+  $cleaning = FALSE;
+  $result = db_query("SELECT format, name from filter_format");
+  $filters = array();
+  foreach ($result as $row) {
+    if (is_numeric($row->format)) {
+      $new =  strtolower(str_replace(' ', '_', $row->name));
+      $old = $row->format;
+      $filters[$old] = $new;
+      $message = '<div>Locating items that need to be cleaned.</div>';
+      $output = '<h1>' . t('Cleaning formats...') .'</h1>';
+      $cleaning = TRUE;
+    }
+  }
+  if ($cleaning) {
+    // List tables that use the format value which will need to be updated.
+    $tables = array(
+      'filter_format' => 'format',
+      'block_custom' => 'format',
+      'wysiwyg' => 'format',
+      'filter' => 'format',
+    );
+    // Find all fields that use the format value which will need to be updated.
+    $fields = field_info_fields();
+    foreach ($fields as $field_name => $field) {
+      if ($field['module'] == 'text' && array_key_exists('format', $field['columns'])) {
+        if ($field['storage']['type'] == 'field_sql_storage') {
+          foreach ($field['storage']['details']['sql'][FIELD_LOAD_CURRENT] as $table_name => $values) {
+            $tables[$table_name] = $values['format'];
+          }
+          foreach ($field['storage']['details']['sql'][FIELD_LOAD_REVISION] as $table_name => $values) {
+            $tables[$table_name] = $values['format'];
+          }
+        }
+      }
+    }
+    foreach ($filters as $old => $new) {
+      foreach($tables as $table => $column) {
+        db_query("UPDATE {" . $table . "} set $column='$new' where $column='$old'");
+        $output .= "Updating $table, setting $column='$new' where $column='$old'<br/>";
+      }
+      $old_permission = "use text format $old";
+      $new_permission = "use text format $new";
+      db_query("UPDATE {role_permission} SET permission='$new_permission' WHERE permission='$old_permission'");
+      $output .= "Updating role_permission, setting permission='$new_permission' where permission='$old_permission'</br>";
+    }
+    drupal_flush_all_caches();
+  }
+  return $message . $output;
+}
